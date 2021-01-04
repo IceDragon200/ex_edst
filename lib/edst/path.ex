@@ -1,4 +1,8 @@
 defmodule EDST.Path do
+  @moduledoc """
+  Path utilities for finding specific blocks or tags within a token list.
+  """
+
   def find_nodes(tokens, [name]) when is_binary(name) do
     tokens
     |> Enum.reduce([], fn
@@ -6,6 +10,9 @@ defmodule EDST.Path do
         [node | acc]
 
       {:tag, ^name, _value} = node, acc ->
+        [node | acc]
+
+      {:label, ^name} = node, acc ->
         [node | acc]
 
       _, acc ->
