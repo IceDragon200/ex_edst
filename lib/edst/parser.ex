@@ -9,8 +9,6 @@ defmodule EDST.Parser do
 
   @type token_meta :: EDST.Tokenizer.token_meta()
 
-  @type newline_token :: EDST.Tokenizer.newline_token()
-
   @type header_token :: EDST.Tokenizer.header_token()
 
   @type comment_token :: EDST.Tokenizer.comment_token()
@@ -70,8 +68,7 @@ defmodule EDST.Parser do
   @typedoc """
   All tokens produced by the parser, some are passed through as is from the tokenizing process.
   """
-  @type token :: newline_token()
-               | header_token()
+  @type token :: header_token()
                | comment_token()
                | tag_token()
                | named_block_token()
@@ -141,7 +138,7 @@ defmodule EDST.Parser do
   end
 
   defp parse_tokens([{:newline, _, _meta} = token | tokens], acc) do
-    parse_tokens(tokens, [token | acc])
+    parse_tokens(tokens, acc)
   end
 
   defp parse_tokens([{:header, _header, _meta} = token | tokens], acc) do
@@ -178,7 +175,7 @@ defmodule EDST.Parser do
 
   defp do_parse_paragraph([{:newline, _, _} | tokens], acc) do
     case tokens do
-      [:newline | rest] ->
+      [{:newline, _, _} | rest] ->
         {Enum.reverse(acc), rest}
 
       rest ->

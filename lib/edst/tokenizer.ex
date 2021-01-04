@@ -271,18 +271,7 @@ defmodule EDST.Tokenizer do
     end
   end
 
-  defp tokenize_bin(<<"-- ", rest::binary>>, [:newline | _] = acc, meta) do
-    # label directly after newline
-    case String.split(rest, "--", parts: 2) do
-      [label, rest] ->
-        tokenize_bin(rest, [{:label, label, meta} | acc], meta)
-
-      [_] ->
-        {:error, {:incomplete_label, rest}}
-    end
-  end
-
-  defp tokenize_bin(<<"-- ", rest::binary>>, [] = acc, meta) do
+  defp tokenize_bin(<<"-- ", rest::binary>>, acc, meta) do
     # label at start
     case String.split(rest, "--", parts: 2) do
       [label, rest] ->
