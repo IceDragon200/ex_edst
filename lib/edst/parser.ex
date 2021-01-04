@@ -7,6 +7,8 @@ defmodule EDST.Parser do
   amongst other fixes.
   """
 
+  @type token_meta :: EDST.Tokenizer.token_meta()
+
   @type newline_token :: EDST.Tokenizer.newline_token()
 
   @type header_token :: EDST.Tokenizer.header_token()
@@ -34,7 +36,7 @@ defmodule EDST.Parser do
       }
 
   """
-  @type named_block_token :: {:named_block, name::String.t(), tokens::[token]}
+  @type named_block_token :: {:named_block, {name::String.t(), tokens::[token]}, token_meta()}
 
   @typedoc """
   While originally not supported, anonymous blocks can be created by using curly braces with no
@@ -47,7 +49,7 @@ defmodule EDST.Parser do
       }
 
   """
-  @type block_token :: {:block, tokens::[token]}
+  @type block_token :: {:block, tokens::[token], token_meta()}
 
   @type paragraph_element_tokens :: EDST.Tokenizer.word_token()
                                   | EDST.Tokenizer.quoted_string_token()
@@ -63,7 +65,7 @@ defmodule EDST.Parser do
       All of this is considered a "single paragraph" by the parser.
 
   """
-  @type paragraph_token :: {:p, [paragraph_element_tokens()]}
+  @type paragraph_token :: {:p, [paragraph_element_tokens()], token_meta()}
 
   @typedoc """
   All tokens produced by the parser, some are passed through as is from the tokenizing process.
@@ -79,7 +81,7 @@ defmodule EDST.Parser do
                | dialogue_token()
                | paragraph_token()
 
-  @spec parse(binary()) :: {:ok, [token]} | {:error, term()}
+  @spec parse(binary()) :: {:ok, [token], rest::[token]} | {:error, term()}
   def parse(bin) when is_binary(bin) do
     case EDST.Tokenizer.tokenize(bin) do
       {:ok, tokens} ->
@@ -94,89 +96,97 @@ defmodule EDST.Parser do
     {:ok, Enum.reverse(acc), []}
   end
 
-  defp parse_tokens([{:block_tag, name}, :open_block | tokens], acc) do
+  defp parse_tokens([{:block_tag, name, meta}, {:open_block, _, _meta} | tokens], acc) do
     case parse_tokens(tokens, []) do
-      {:ok, body, [:close_block | rest]} ->
-        parse_tokens(rest, [{:named_block, name, body} | acc])
+      {:ok, body, [{:close_block, _, _meta} | rest]} ->
+        parse_tokens(rest, [{:named_block, {name, body}, meta} | acc])
     end
   end
 
-  defp parse_tokens([:open_block | tokens], acc) do
+  defp parse_tokens([{:open_block, _, meta} | tokens], acc) do
     case parse_tokens(tokens, []) do
-      {:ok, body, [:close_block | rest]} ->
-        parse_tokens(rest, [{:block, body} | acc])
+      {:ok, body, [{:close_block, _, _meta} | rest]} ->
+        parse_tokens(rest, [{:block, body, meta} | acc])
     end
   end
 
-  defp parse_tokens([:close_block | _tokens] = tokens, acc) do
+  defp parse_tokens([{:close_block, _, _meta} | _tokens] = tokens, acc) do
     {:ok, Enum.reverse(acc), tokens}
   end
 
-  defp parse_tokens([{:tag, _key, _value} = token | tokens], acc) do
+  defp parse_tokens([{:tag, {_key, _value}, _meta} = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_tokens([{:line_item, _item} = token | tokens], acc) do
+  defp parse_tokens([{:line_item, _item, _meta} = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_tokens([{:comment, _comment} = token | tokens], acc) do
+  defp parse_tokens([{:comment, _comment, _meta} = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_tokens([{:word, _word} | _] = tokens, acc) do
-    case parse_paragraph(tokens, []) do
-      {body, tokens} ->
-        parse_tokens(tokens, [{:p, body} | acc])
+  defp parse_tokens([{:word, _word, _meta} | _] = tokens, acc) do
+    case parse_paragraph(tokens) do
+      {token, tokens} ->
+        parse_tokens(tokens, [token | acc])
     end
   end
 
-  defp parse_tokens([{:quoted_string, _body} | _] = tokens, acc) do
-    case parse_paragraph(tokens, []) do
-      {body, tokens} ->
-        parse_tokens(tokens, [{:p, body} | acc])
+  defp parse_tokens([{:quoted_string, _body, _meta} | _] = tokens, acc) do
+    case parse_paragraph(tokens) do
+      {token, tokens} ->
+        parse_tokens(tokens, [token | acc])
     end
   end
 
-  defp parse_tokens([:newline = token | tokens], acc) do
+  defp parse_tokens([{:newline, _, _meta} = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_tokens([{:header, _header} = token | tokens], acc) do
+  defp parse_tokens([{:header, _header, _meta} = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_tokens([{:label, _label} = token | tokens], acc) do
+  defp parse_tokens([{:label, _label, _meta} = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_tokens([{:dialogue, _speaker, _body} = token | tokens], acc) do
+  defp parse_tokens([{:dialogue, {_speaker, _body}, _meta} = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_paragraph([], acc) do
+  defp parse_paragraph(tokens) do
+    {tokens, rest} = do_parse_paragraph(tokens, [])
+
+    # use the first child's meta as the paragraphs meta
+    [{_, _, meta} | _] = tokens
+    {{:p, tokens, meta}, rest}
+  end
+
+  defp do_parse_paragraph([], acc) do
     {Enum.reverse(acc), []}
   end
 
-  defp parse_paragraph([{:quoted_string, _body} = token | tokens], acc) do
-    parse_paragraph(tokens, [token | acc])
+  defp do_parse_paragraph([{:quoted_string, _body, _} = token | tokens], acc) do
+    do_parse_paragraph(tokens, [token | acc])
   end
 
-  defp parse_paragraph([{:word, _word} = token | tokens], acc) do
-    parse_paragraph(tokens, [token | acc])
+  defp do_parse_paragraph([{:word, _word, _} = token | tokens], acc) do
+    do_parse_paragraph(tokens, [token | acc])
   end
 
-  defp parse_paragraph([:newline | tokens], acc) do
+  defp do_parse_paragraph([{:newline, _, _} | tokens], acc) do
     case tokens do
       [:newline | rest] ->
         {Enum.reverse(acc), rest}
 
       rest ->
-        parse_paragraph(rest, acc)
+        do_parse_paragraph(rest, acc)
     end
   end
 
-  defp parse_paragraph(tokens, acc) do
+  defp do_parse_paragraph(tokens, acc) do
     # no other matching tokens
     {Enum.reverse(acc), tokens}
   end

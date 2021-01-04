@@ -6,16 +6,16 @@ defmodule EDST.Path do
   def find_nodes(tokens, [name]) when is_binary(name) do
     tokens
     |> Enum.reduce([], fn
-      {:named_block, ^name, _children} = node, acc ->
+      {:named_block, {^name, _children}, _} = node, acc ->
         [node | acc]
 
-      {:tag, ^name, _value} = node, acc ->
+      {:tag, {^name, _value}, _} = node, acc ->
         [node | acc]
 
-      {:label, ^name} = node, acc ->
+      {:label, ^name, _} = node, acc ->
         [node | acc]
 
-      _, acc ->
+      {_, _, _}, acc ->
         acc
     end)
     |> Enum.reverse()
@@ -24,16 +24,16 @@ defmodule EDST.Path do
   def find_nodes(tokens, [name | rest] = path) when is_binary(name) do
     tokens
     |> Enum.reduce([], fn
-      {:named_block, ^name, children}, acc ->
+      {:named_block, {^name, children}, _}, acc ->
         acc ++ find_nodes(children, rest)
 
-      {:named_block, _, children}, acc ->
+      {:named_block, {_, children}, _}, acc ->
         acc ++ find_nodes(children, path)
 
-      {:block, children}, acc ->
+      {:block, children, _}, acc ->
         acc ++ find_nodes(children, path)
 
-      _, acc ->
+      {_, _, _}, acc ->
         acc
     end)
   end

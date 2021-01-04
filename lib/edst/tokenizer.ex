@@ -1,10 +1,14 @@
 defmodule EDST.Tokenizer do
+  @type token_meta :: %{
+    line_no: non_neg_integer(),
+  }
+
   @typedoc """
   The newline token represents a raw newline occuring between words
 
   Other tokens may already require a newline and would parse them out already.
   """
-  @type newline_token :: :newline
+  @type newline_token :: {:newline, nil, token_meta()}
 
   @typedoc """
   A header is a space delimited string starting with ~
@@ -14,7 +18,7 @@ defmodule EDST.Tokenizer do
       ~SECTION:1
 
   """
-  @type header_token :: {:header, String.t()}
+  @type header_token :: {:header, String.t(), token_meta()}
 
   @typedoc """
   Comments are a newline delimited character strings starting with a #
@@ -28,7 +32,7 @@ defmodule EDST.Tokenizer do
       Word # This is now a valid comment
 
   """
-  @type comment_token :: {:comment, String.t()}
+  @type comment_token :: {:comment, String.t(), token_meta()}
 
   @typedoc """
   Block tags are those that start with %% followed by name denoted until the end of the line
@@ -39,7 +43,7 @@ defmodule EDST.Tokenizer do
       %%block
 
   """
-  @type block_tag_token :: {:block_tag, String.t()}
+  @type block_tag_token :: {:block_tag, String.t(), token_meta()}
 
   @typedoc """
   Plain tags are those that start with a % followed by a word and then the rest of the line
@@ -52,7 +56,7 @@ defmodule EDST.Tokenizer do
       %name John Doe
 
   """
-  @type tag_token :: {:tag, name::String.t(), value::String.t()}
+  @type tag_token :: {:tag, {name::String.t(), value::String.t()}, token_meta()}
 
   @typedoc """
   Open block tokens are just a open curly brace `{` on a line by itself
@@ -62,7 +66,7 @@ defmodule EDST.Tokenizer do
     {
 
   """
-  @type open_block_token :: :open_block
+  @type open_block_token :: {:open_block, nil, token_meta()}
 
   @typedoc """
   Close block tokens are just a close curly brace `}` on a line by itself
@@ -72,7 +76,7 @@ defmodule EDST.Tokenizer do
     }
 
   """
-  @type close_block_token :: :close_block
+  @type close_block_token :: {:close_block, nil, token_meta()}
 
   @typedoc """
   A line item is denoted by `---` followed by the value
@@ -82,7 +86,7 @@ defmodule EDST.Tokenizer do
       --- Value
 
   """
-  @type line_item_token :: {:line_item, String.t()}
+  @type line_item_token :: {:line_item, String.t(), token_meta()}
 
   @typedoc """
   A label is denoted by a starting `--` and then terminated by another `--`, normally on a line
@@ -93,7 +97,7 @@ defmodule EDST.Tokenizer do
       -- Label --
 
   """
-  @type label_token :: {:label, String.t()}
+  @type label_token :: {:label, String.t(), token_meta()}
 
   @typedoc """
   A dialogue is a line starting with @ followed by any number of words and finally terminated
@@ -106,7 +110,7 @@ defmodule EDST.Tokenizer do
       @ John Doe "Hello darkness my old friend."
 
   """
-  @type dialogue_token :: {:dialogue, speaker::String.t(), body::String.t()}
+  @type dialogue_token :: {:dialogue, {speaker::String.t(), body::String.t()}, token_meta()}
 
   @typedoc """
   A quoted string is a list of words enclosed by `"`
@@ -118,7 +122,7 @@ defmodule EDST.Tokenizer do
     "This is a quoted string"
 
   """
-  @type quoted_string_token :: {:quoted_string, body::String.t()}
+  @type quoted_string_token :: {:quoted_string, body::String.t(), token_meta()}
 
   @typedoc """
   A word is any other bit of text not recognized as a formal token, though it's called word it
@@ -129,7 +133,7 @@ defmodule EDST.Tokenizer do
     These are words (this-too)
 
   """
-  @type word_token :: {:word, word::String.t()}
+  @type word_token :: {:word, word::String.t(), token_meta()}
 
   @typedoc """
   All of the tokens that can be produced by the tokenizer
@@ -149,89 +153,89 @@ defmodule EDST.Tokenizer do
 
   @spec tokenize(binary()) :: {:ok, [token()]} | {:error, term}
   def tokenize(binary) when is_binary(binary) do
-    tokenize_bin(binary, [])
+    tokenize_bin(binary, [], %{line_no: 1})
   end
 
-  defp tokenize_bin("", acc) do
+  defp tokenize_bin("", acc, _meta) do
     {:ok, Enum.reverse(acc)}
   end
 
-  defp tokenize_bin(<<"\s",rest::binary>>, acc) do
-    tokenize_bin(String.trim_leading(rest), acc)
+  defp tokenize_bin(<<"\s",rest::binary>>, acc, meta) do
+    tokenize_bin(String.trim_leading(rest), acc, meta)
   end
 
-  defp tokenize_bin(<<"\r\n",rest::binary>>, acc) do
+  defp tokenize_bin(<<"\r\n",rest::binary>>, acc, meta) do
     # raw newline
-    node = :newline
-    tokenize_bin(rest, [node | acc])
+    node = {:newline, nil, meta}
+    tokenize_bin(rest, [node | acc], next_line(meta))
   end
 
-  defp tokenize_bin(<<"\n",rest::binary>>, acc) do
+  defp tokenize_bin(<<"\n",rest::binary>>, acc, meta) do
     # raw newline
-    node = :newline
-    tokenize_bin(rest, [node | acc])
+    node = {:newline, nil, meta}
+    tokenize_bin(rest, [node | acc], next_line(meta))
   end
 
-  defp tokenize_bin(<<"~",rest::binary>>, acc) do
+  defp tokenize_bin(<<"~",rest::binary>>, acc, meta) do
     # header tag
     case tokenize_word(rest) do
       {header, rest} ->
-        node = {:header, header}
-        tokenize_bin(rest, [node | acc])
+        node = {:header, header, meta}
+        tokenize_bin(rest, [node | acc], meta)
     end
   end
 
-  defp tokenize_bin(<<"#",rest::binary>>, acc) do
+  defp tokenize_bin(<<"#",rest::binary>>, acc, meta) do
     # comment
-    {node, rest} =
+    {node, rest, meta} =
       case String.split(rest, "\n", parts: 2) do
         [comment, rest] ->
-          {{:comment, comment}, rest}
+          {{:comment, comment, meta}, rest, next_line(meta)}
 
         [] ->
-          {{:comment, rest}, ""}
+          {{:comment, rest, meta}, "", meta}
       end
 
-    tokenize_bin(rest, [node | acc])
+    tokenize_bin(rest, [node | acc], meta)
   end
 
-  defp tokenize_bin(<<"%%",rest::binary>>, acc) do
+  defp tokenize_bin(<<"%%",rest::binary>>, acc, meta) do
     # block tag
-    {node, rest} =
+    {node, rest, meta} =
       case String.split(rest, "\n", parts: 2) do
         [name, rest] ->
-          {{:block_tag, name}, rest}
+          {{:block_tag, name, meta}, rest, next_line(meta)}
 
         [] ->
-          {{:block_tag, rest}, ""}
+          {{:block_tag, rest, meta}, ""}
       end
 
-    tokenize_bin(rest, [node | acc])
+    tokenize_bin(rest, [node | acc], meta)
   end
 
-  defp tokenize_bin(<<"%",rest::binary>>, acc) do
+  defp tokenize_bin(<<"%",rest::binary>>, acc, meta) do
     # tag
     case tokenize_word(rest) do
       {name, rest} ->
         case String.split(rest, "\n", parts: 2) do
           [value, rest] ->
             value = String.trim(value)
-            tokenize_bin(rest, [{:tag, name, value} | acc])
+            tokenize_bin(rest, [{:tag, {name, value}, meta} | acc], next_line(meta))
 
           [] ->
             value = String.trim(rest)
-            tokenize_bin("", [{:tag, name, value} | acc])
+            tokenize_bin("", [{:tag, {name, value}, meta} | acc], meta)
         end
     end
   end
 
-  defp tokenize_bin(<<"{",rest::binary>>, acc) do
+  defp tokenize_bin(<<"{",rest::binary>>, acc, meta) do
     # open block
     case String.split(rest, "\n", parts: 2) do
       [should_be_blank, rest] ->
         case String.trim(should_be_blank) do
           "" ->
-            tokenize_bin(rest, [:open_block | acc])
+            tokenize_bin(rest, [{:open_block, nil, meta} | acc], next_line(meta))
 
           _ ->
             {:error, {:opening_block_error, should_be_blank}}
@@ -239,78 +243,81 @@ defmodule EDST.Tokenizer do
     end
   end
 
-  defp tokenize_bin(<<"}",rest::binary>>, acc) do
+  defp tokenize_bin(<<"}",rest::binary>>, acc, meta) do
     # close block
     case String.split(rest, "\n", parts: 2) do
       [should_be_blank, rest] ->
         case String.trim(should_be_blank) do
           "" ->
-            tokenize_bin(rest, [:close_block | acc])
+            tokenize_bin(rest, [{:close_block, nil, meta} | acc], next_line(meta))
 
           _ ->
             {:error, {:close_block_error, should_be_blank}}
         end
 
       [_] ->
-        tokenize_bin("", [:close_block | acc])
+        tokenize_bin("", [{:close_block, nil, meta} | acc], meta)
     end
   end
 
-  defp tokenize_bin(<<"--- ",rest::binary>>, acc) do
+  defp tokenize_bin(<<"--- ",rest::binary>>, acc, meta) do
     # line item
     case String.split(rest, "\n", parts: 2) do
       [item, rest] ->
-        tokenize_bin(rest, [{:line_item, item} | acc])
+        tokenize_bin(rest, [{:line_item, item, meta} | acc], next_line(meta))
+
+      [item] ->
+        tokenize_bin("", [{:line_item, item, meta} | acc], meta)
     end
   end
 
-  defp tokenize_bin(<<"-- ", rest::binary>>, [:newline | _] = acc) do
+  defp tokenize_bin(<<"-- ", rest::binary>>, [:newline | _] = acc, meta) do
     # label directly after newline
     case String.split(rest, "--", parts: 2) do
       [label, rest] ->
-        tokenize_bin(rest, [{:label, label} | acc])
+        tokenize_bin(rest, [{:label, label, meta} | acc], meta)
 
       [_] ->
         {:error, {:incomplete_label, rest}}
     end
   end
 
-  defp tokenize_bin(<<"-- ", rest::binary>>, [] = acc) do
+  defp tokenize_bin(<<"-- ", rest::binary>>, [] = acc, meta) do
     # label at start
     case String.split(rest, "--", parts: 2) do
       [label, rest] ->
         label = String.trim(label)
-        tokenize_bin(rest, [{:label, label} | acc])
+        tokenize_bin(rest, [{:label, label, meta} | acc], meta)
 
       [_] ->
         {:error, {:incomplete_label, rest}}
     end
   end
 
-  defp tokenize_bin(<<"@ ",rest::binary>>, acc) do
+  defp tokenize_bin(<<"@ ",rest::binary>>, acc, meta) do
     # dialogue speaker
     case tokenize_speaker_name(rest, []) do
       {name, <<"\"",_::binary>> = rest} ->
         name = String.trim(name)
-        case tokenize_quoted_string(rest) do
-          {body, rest} ->
-            tokenize_bin(rest, [{:dialogue, name, body} | acc])
+        case tokenize_quoted_string(rest, meta) do
+          {body, rest, new_meta} ->
+            tokenize_bin(rest, [{:dialogue, {name, body}, meta} | acc], new_meta)
         end
     end
   end
 
-  defp tokenize_bin(<<"\"",_rest::binary>> = rest, acc) do
+  defp tokenize_bin(<<"\"",_rest::binary>> = rest, acc, meta) do
     # just a raw quoted string
-    case tokenize_quoted_string(rest) do
-      {string, rest} ->
-        tokenize_bin(rest, [{:quoted_string, string} | acc])
+    case tokenize_quoted_string(rest, meta) do
+      {string, rest, new_meta} ->
+        tokenize_bin(rest, [{:quoted_string, string, meta} | acc], new_meta)
     end
   end
 
-  defp tokenize_bin(rest, acc) do
+  defp tokenize_bin(rest, acc, meta) do
     case tokenize_word(rest) do
       {word, rest} ->
-        tokenize_bin(rest, [{:word, word} | acc])
+        tokenize_bin(rest, [{:word, word, meta} | acc], meta)
     end
   end
 
@@ -323,18 +330,26 @@ defmodule EDST.Tokenizer do
     tokenize_speaker_name(rest, [<<c>> | acc])
   end
 
-  defp tokenize_quoted_string(str, state \\ :start, acc \\ [])
+  defp tokenize_quoted_string(str, meta, state \\ :start, acc \\ [])
 
-  defp tokenize_quoted_string(<<"\"",rest::binary>>, :start, acc) do
-    tokenize_quoted_string(rest, :body, acc)
+  defp tokenize_quoted_string(<<"\"",rest::binary>>, meta, :start, acc) do
+    tokenize_quoted_string(rest, meta, :body, acc)
   end
 
-  defp tokenize_quoted_string(<<"\"",rest::binary>>, :body, acc) do
-    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest}
+  defp tokenize_quoted_string(<<"\"",rest::binary>>, meta, :body, acc) do
+    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest, meta}
   end
 
-  defp tokenize_quoted_string(<<c,rest::binary>>, :body, acc) do
-    tokenize_quoted_string(rest, :body, [<<c>> | acc])
+  defp tokenize_quoted_string(<<"\r\n",rest::binary>>, meta, :body, acc) do
+    tokenize_quoted_string(rest, next_line(meta), :body, ["\s" | acc])
+  end
+
+  defp tokenize_quoted_string(<<"\n",rest::binary>>, meta, :body, acc) do
+    tokenize_quoted_string(rest, next_line(meta), :body, ["\s" | acc])
+  end
+
+  defp tokenize_quoted_string(<<c,rest::binary>>, meta, :body, acc) do
+    tokenize_quoted_string(rest, meta, :body, [<<c>> | acc])
   end
 
   defp tokenize_word(str, acc \\ [])
@@ -357,5 +372,9 @@ defmodule EDST.Tokenizer do
 
   defp tokenize_word(<<c,rest::binary>>, acc) do
     tokenize_word(rest, [<<c>> | acc])
+  end
+
+  defp next_line(meta) do
+    %{meta | line_no: meta.line_no + 1}
   end
 end
