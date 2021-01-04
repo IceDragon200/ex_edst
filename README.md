@@ -1,6 +1,6 @@
 # ExEdst
 
-**TODO: Add description**
+Elixir version of my EDST parser.
 
 ## Installation
 
