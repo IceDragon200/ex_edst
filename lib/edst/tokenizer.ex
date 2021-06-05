@@ -1,5 +1,6 @@
 defmodule EDST.Tokenizer do
   @type token_meta :: %{
+    col_no: non_neg_integer(),
     line_no: non_neg_integer(),
   }
 
@@ -153,15 +154,16 @@ defmodule EDST.Tokenizer do
 
   @spec tokenize(binary()) :: {:ok, [token()]} | {:error, term}
   def tokenize(binary) when is_binary(binary) do
-    tokenize_bin(binary, [], %{line_no: 1})
+    tokenize_bin(binary, [], %{line_no: 1, col_no: 1})
   end
 
   defp tokenize_bin("", acc, _meta) do
     {:ok, Enum.reverse(acc)}
   end
 
-  defp tokenize_bin(<<"\s",rest::binary>>, acc, meta) do
-    tokenize_bin(String.trim_leading(rest), acc, meta)
+  defp tokenize_bin(<<"\s",_::binary>> = rest, acc, meta) do
+    trimmed = String.trim_leading(rest, "\s")
+    tokenize_bin(trimmed, acc, move_column(meta, byte_size(rest) - byte_size(trimmed)))
   end
 
   defp tokenize_bin(<<"\r\n",rest::binary>>, acc, meta) do
@@ -181,7 +183,7 @@ defmodule EDST.Tokenizer do
     case tokenize_word(rest) do
       {header, rest} ->
         node = {:header, header, meta}
-        tokenize_bin(rest, [node | acc], meta)
+        tokenize_bin(rest, [node | acc], move_column(meta, 1 + byte_size(header)))
     end
   end
 
@@ -286,9 +288,9 @@ defmodule EDST.Tokenizer do
   defp tokenize_bin(<<"@ ",rest::binary>>, acc, meta) do
     # dialogue speaker
     case tokenize_speaker_name(rest, []) do
-      {name, <<"\"",_::binary>> = rest} ->
-        name = String.trim(name)
-        case tokenize_quoted_string(rest, meta) do
+      {raw_name, <<"\"",_::binary>> = rest} ->
+        name = String.trim(raw_name)
+        case tokenize_quoted_string(rest, move_column(meta, 2 + byte_size(raw_name))) do
           {body, rest, new_meta} ->
             tokenize_bin(rest, [{:dialogue, {name, body}, meta} | acc], new_meta)
         end
@@ -306,7 +308,7 @@ defmodule EDST.Tokenizer do
   defp tokenize_bin(rest, acc, meta) do
     case tokenize_word(rest) do
       {word, rest} ->
-        tokenize_bin(rest, [{:word, word, meta} | acc], meta)
+        tokenize_bin(rest, [{:word, word, meta} | acc], move_column(meta, byte_size(word)))
     end
   end
 
@@ -322,11 +324,11 @@ defmodule EDST.Tokenizer do
   defp tokenize_quoted_string(str, meta, state \\ :start, acc \\ [])
 
   defp tokenize_quoted_string(<<"\"",rest::binary>>, meta, :start, acc) do
-    tokenize_quoted_string(rest, meta, :body, acc)
+    tokenize_quoted_string(rest, move_column(meta, 1), :body, acc)
   end
 
   defp tokenize_quoted_string(<<"\"",rest::binary>>, meta, :body, acc) do
-    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest, meta}
+    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest, move_column(meta, 1)}
   end
 
   defp tokenize_quoted_string(<<"\r\n",rest::binary>>, meta, :body, acc) do
@@ -338,7 +340,7 @@ defmodule EDST.Tokenizer do
   end
 
   defp tokenize_quoted_string(<<c,rest::binary>>, meta, :body, acc) do
-    tokenize_quoted_string(rest, meta, :body, [<<c>> | acc])
+    tokenize_quoted_string(rest, move_column(meta, 1), :body, [<<c>> | acc])
   end
 
   defp tokenize_word(str, acc \\ [])
@@ -364,6 +366,10 @@ defmodule EDST.Tokenizer do
   end
 
   defp next_line(meta) do
-    %{meta | line_no: meta.line_no + 1}
+    %{meta | line_no: meta.line_no + 1, col_no: 1}
+  end
+
+  defp move_column(meta, amount) do
+    %{meta | col_no: meta.col_no + amount}
   end
 end
