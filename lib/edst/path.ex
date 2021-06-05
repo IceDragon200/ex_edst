@@ -21,6 +21,18 @@ defmodule EDST.Path do
     |> Enum.reverse()
   end
 
+  def find_nodes(tokens, [name]) when is_atom(name) do
+    tokens
+    |> Enum.reduce([], fn
+      {^name, _, _} = node, acc ->
+        [node | acc]
+
+      {_, _, _}, acc ->
+        acc
+    end)
+    |> Enum.reverse()
+  end
+
   def find_nodes(tokens, [name | rest] = path) when is_binary(name) do
     tokens
     |> Enum.reduce([], fn
@@ -36,5 +48,23 @@ defmodule EDST.Path do
       {_, _, _}, acc ->
         acc
     end)
+  end
+
+  def find_nodes(tokens, [name | _rest] = path) when is_atom(name) do
+    tokens
+    |> Enum.reduce([], fn
+      {^name, _, _} = node, acc ->
+        [node | acc]
+
+      {:named_block, {_, children}, _}, acc ->
+        acc ++ find_nodes(children, path)
+
+      {:block, children, _}, acc ->
+        acc ++ find_nodes(children, path)
+
+      {_, _, _}, acc ->
+        acc
+    end)
+    |> Enum.reverse()
   end
 end

@@ -78,6 +78,8 @@ defmodule EDST.Parser do
                | dialogue_token()
                | paragraph_token()
 
+  @type tokens :: [token]
+
   @spec parse(binary()) :: {:ok, [token], rest::[token]} | {:error, term()}
   def parse(bin) when is_binary(bin) do
     case EDST.Tokenizer.tokenize(bin) do
@@ -137,7 +139,7 @@ defmodule EDST.Parser do
     end
   end
 
-  defp parse_tokens([{:newline, _, _meta} = token | tokens], acc) do
+  defp parse_tokens([{:newline, _, _meta} | tokens], acc) do
     parse_tokens(tokens, acc)
   end
 
