@@ -94,6 +94,10 @@ defmodule EDST.Path.Parser do
     to_path_node(item)
   end
 
+  defp to_path_matcher([{:node_alias, item, meta}, {leaf, _, _} = leaf_token | rest]) when leaf in @leaf_tokens do
+    to_path_matcher([{:node, item, meta}, {:sub, nil, meta}, leaf_token | rest])
+  end
+
   # <op>value
   defp to_path_matcher([{op, nil, _}, {leaf, _, _} = token]) when op in @operators and leaf in @leaf_tokens do
     case to_path_matcher([token]) do

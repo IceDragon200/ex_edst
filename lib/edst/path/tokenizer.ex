@@ -102,6 +102,14 @@ defmodule EDST.Path.Tokenizer do
     end
   end
 
+  defp tokenize_bin(<<"%%",rest::binary>>, acc, meta) do
+    tokenize_bin(rest, [{:node_alias, "named_block", meta} | acc], move_column(meta, 2))
+  end
+
+  defp tokenize_bin(<<"%",rest::binary>>, acc, meta) do
+    tokenize_bin(rest, [{:node_alias, "tag", meta} | acc], move_column(meta, 2))
+  end
+
   defp tokenize_bin(rest, acc, meta) do
     case tokenize_word(rest) do
       {word, rest} ->

@@ -41,6 +41,13 @@ defmodule EDST.Path.ParserTest do
       ]} = Parser.parse("@tag~#id=2")
     end
 
+    test "can handle aliases forms" do
+      assert {:ok, [
+        {:named_block, "head"},
+        {:tag, "id", {{:op, :equals}, "2"}}
+      ]} = Parser.parse("%%head %id=2")
+    end
+
     test "can parse a comparison path" do
       assert {:ok, [{{:op, :equals}, "thing"}]} = Parser.parse("=thing")
       assert {:ok, [{{:op, :contains}, "thing"}]} = Parser.parse("#thing")

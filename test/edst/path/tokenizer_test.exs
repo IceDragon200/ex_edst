@@ -12,6 +12,14 @@ defmodule EDST.Path.TokenizerTest do
       assert {:ok, [{:node, "john", _}]} = Tokenizer.tokenize("@john")
     end
 
+    test "can tokenize a node named_block alias" do
+      assert {:ok, [{:node_alias, "named_block", _}]} = Tokenizer.tokenize("%%")
+    end
+
+    test "can tokenize a node tag alias" do
+      assert {:ok, [{:node_alias, "tag", _}]} = Tokenizer.tokenize("%")
+    end
+
     test "can tokenize a path with subs" do
       assert {:ok, [{:word, "john", _}, {:sub, nil, _}, {:word, "abc", _}]} =
         Tokenizer.tokenize("john:abc")
