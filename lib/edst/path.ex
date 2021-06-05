@@ -123,6 +123,14 @@ defmodule EDST.Path do
     String.ends_with?(String.downcase(base), String.downcase(expected))
   end
 
+  def matches?({{:op, _} = op, expected}, given) do
+    matches_value?(op, given, expected)
+  end
+
+  def matches?(matcher, value) when is_binary(matcher) do
+    matcher == value
+  end
+
   defp node_matches(token, {:>, matcher}) do
     case node_matches(token, matcher) do
       true ->
@@ -139,28 +147,65 @@ defmodule EDST.Path do
         node_matches(token, matcher)
 
       {_, _, _} ->
+        has_children_response(token)
+    end
+  end
+
+  defp node_matches(token, {name, key_matcher, value_matcher}) when is_atom(name) do
+    case token do
+      {:header, _, _} ->
+        false
+
+      {:comment, _, _} ->
+        false
+
+      {:line_item, _, _} ->
+        false
+
+      {:label, _, _} ->
+        false
+
+      {:tag, {key, value}, _} ->
+        matches?(key_matcher, key) and matches?(value_matcher, value)
+
+      {:dialogue, {speaker, body}, _} ->
+        matches?(key_matcher, speaker) and matches?(value_matcher, body)
+
+      {:quoted_string, _, _} ->
+        false
+
+      {:named_block, _, _} ->
+        :has_children
+
+      {:block, _, _} ->
+        :has_children
+
+      {:p, _, _} ->
+        false
+
+      {:word, _, _} ->
         false
     end
   end
 
-  defp node_matches(token, {{:op, _} = op, name}) when is_binary(name) do
+  defp node_matches(token, {{:op, _} = op, expected}) when is_binary(expected) do
     case token do
-      {:header, value, _} -> matches_value?(op, value, name)
-      {:comment, value, _} -> matches_value?(op, value, name)
-      {:line_item, value, _} -> matches_value?(op, value, name)
-      {:label, value, _} -> matches_value?(op, value, name)
-      {:tag, {value, _}, _} -> matches_value?(op, value, name)
-      {:dialogue, {value, _}, _} -> matches_value?(op, value, name)
-      {:quoted_string, value, _} -> matches_value?(op, value, name)
-      {:named_block, {value, _children}, _} ->
-        if matches_value?(op, value, name) do
+      {:header, value, _} -> matches_value?(op, value, expected)
+      {:comment, value, _} -> matches_value?(op, value, expected)
+      {:line_item, value, _} -> matches_value?(op, value, expected)
+      {:label, value, _} -> matches_value?(op, value, expected)
+      {:tag, {key, _}, _} -> matches_value?(op, key, expected)
+      {:dialogue, {value, _}, _} -> matches_value?(op, value, expected)
+      {:quoted_string, value, _} -> matches_value?(op, value, expected)
+      {:named_block, {key, _children}, _} ->
+        if matches_value?(op, key, expected) do
           true
         else
           :has_children
         end
       {:block, _children, _} -> :has_children
       {:p, _children, _} -> :has_children
-      {:word, value, _} -> matches_value?(op, value, name)
+      {:word, value, _} -> matches_value?(op, value, expected)
     end
   end
 
@@ -174,8 +219,24 @@ defmodule EDST.Path do
         true
 
       _ ->
-        false
+        has_children_response(token)
     end
+  end
+
+  defp has_children_response({:named_block, _, _}) do
+    :has_children
+  end
+
+  defp has_children_response({:block, _, _}) do
+    :has_children
+  end
+
+  defp has_children_response({:p, _, _}) do
+    :has_children
+  end
+
+  defp has_children_response({_, _, _}) do
+    false
   end
 
   defp get_children({:p, children, _}) do
