@@ -161,11 +161,6 @@ defmodule EDST.Tokenizer do
     {:ok, Enum.reverse(acc)}
   end
 
-  defp tokenize_bin(<<"\s",_::binary>> = rest, acc, meta) do
-    trimmed = String.trim_leading(rest, "\s")
-    tokenize_bin(trimmed, acc, move_column(meta, byte_size(rest) - byte_size(trimmed)))
-  end
-
   defp tokenize_bin(<<"\r\n",rest::binary>>, acc, meta) do
     # raw newline
     node = {:newline, nil, meta}
@@ -176,6 +171,11 @@ defmodule EDST.Tokenizer do
     # raw newline
     node = {:newline, nil, meta}
     tokenize_bin(rest, [node | acc], next_line(meta))
+  end
+
+  defp tokenize_bin(<<"\s",_::binary>> = rest, acc, meta) do
+    trimmed = String.trim_leading(rest, "\s")
+    tokenize_bin(trimmed, acc, move_column(meta, byte_size(rest) - byte_size(trimmed)))
   end
 
   defp tokenize_bin(<<"~",rest::binary>>, acc, meta) do

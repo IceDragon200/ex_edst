@@ -73,6 +73,16 @@ defmodule EDST.Path do
   """
   @type t :: [matcher()]
 
+  @spec decode_path(String.t()) :: {:ok, t()}
+  def decode_path(path) when is_binary(path) do
+    EDST.Path.Parser.parse(path)
+  end
+
+  @spec encode_path(t()) :: String.t()
+  def encode_path(path) when is_list(path) do
+    EDST.Path.Encoder.encode(path)
+  end
+
   @spec find_nodes([token()], t()) :: [token()]
   def find_nodes(tokens, matchers) do
     matchers
