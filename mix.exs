@@ -4,8 +4,8 @@ defmodule ExEdst.MixProject do
   def project do
     [
       app: :ex_edst,
-      version: "0.1.0",
-      elixir: "~> 1.7",
+      version: "0.2.0",
+      elixir: "~> 1.12",
       elixirc_options: [
         warninngs_as_errors: true,
       ],
