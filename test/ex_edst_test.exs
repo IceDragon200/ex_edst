@@ -1,5 +1,5 @@
 defmodule EDSTTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   describe "parse" do
     test "can parse an empty label" do

@@ -5,5 +5,7 @@ defmodule EDST do
 
   defdelegate parse(binary), to: EDST.Parser
 
+  defdelegate parse!(binary), to: EDST.Parser
+
   defdelegate find_nodes(tokens, path), to: EDST.Path
 end

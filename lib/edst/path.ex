@@ -190,22 +190,42 @@ defmodule EDST.Path do
 
   defp node_matches(token, {{:op, _} = op, expected}) when is_binary(expected) do
     case token do
-      {:header, value, _} -> matches_value?(op, value, expected)
-      {:comment, value, _} -> matches_value?(op, value, expected)
-      {:line_item, value, _} -> matches_value?(op, value, expected)
-      {:label, value, _} -> matches_value?(op, value, expected)
-      {:tag, {key, _}, _} -> matches_value?(op, key, expected)
-      {:dialogue, {value, _}, _} -> matches_value?(op, value, expected)
-      {:quoted_string, value, _} -> matches_value?(op, value, expected)
+      {:header, value, _} ->
+        matches_value?(op, value, expected)
+
+      {:comment, value, _} ->
+        matches_value?(op, value, expected)
+
+      {:line_item, value, _} ->
+        matches_value?(op, value, expected)
+
+      {:label, value, _} ->
+        matches_value?(op, value, expected)
+
+      {:tag, {key, _}, _} ->
+        matches_value?(op, key, expected)
+
+      {:dialogue, {value, _}, _} ->
+        matches_value?(op, value, expected)
+
+      {:quoted_string, value, _} ->
+        matches_value?(op, value, expected)
+
       {:named_block, {key, _children}, _} ->
         if matches_value?(op, key, expected) do
           true
         else
           :has_children
         end
-      {:block, _children, _} -> :has_children
-      {:p, _children, _} -> :has_children
-      {:word, value, _} -> matches_value?(op, value, expected)
+
+      {:block, _children, _} ->
+        :has_children
+
+      {:p, _children, _} ->
+        :has_children
+
+      {:word, value, _} ->
+        matches_value?(op, value, expected)
     end
   end
 
@@ -256,14 +276,14 @@ defmodule EDST.Path do
   end
 
   defp do_find_nodes([], _matcher, acc) do
-    Enum.reverse(acc)
+    List.flatten(acc)
   end
 
   defp do_find_nodes([token | tokens], matcher, acc) do
     acc =
       case node_matches(token, matcher) do
         true -> # matches the specified token
-          acc = [token | acc]
+          acc = [acc, token]
 
           case get_children(token) do
             [] ->
@@ -283,7 +303,7 @@ defmodule EDST.Path do
           end
 
         :immediate -> # immediate match, don't check any children
-          [token | acc]
+          [acc, token]
 
         false ->
           acc

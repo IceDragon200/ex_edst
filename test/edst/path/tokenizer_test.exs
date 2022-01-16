@@ -1,5 +1,5 @@
 defmodule EDST.Path.TokenizerTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias EDST.Path.Tokenizer
 

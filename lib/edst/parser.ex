@@ -6,6 +6,7 @@ defmodule EDST.Parser do
   This process includes turning words into paragraphs, block tags and their tags into proper blocks
   amongst other fixes.
   """
+  alias EDST.TokenizerError
 
   @type token_meta :: EDST.Tokenizer.token_meta()
 
@@ -80,9 +81,22 @@ defmodule EDST.Parser do
 
   @type tokens :: [token]
 
-  @spec parse(binary()) :: {:ok, [token], rest::[token]} | {:error, term()}
-  def parse(bin) when is_binary(bin) do
-    case EDST.Tokenizer.tokenize(bin) do
+  @type parse_errors :: term()
+
+  @spec parse!(String.t()) :: tokens()
+  def parse!(blob) do
+    case parse(blob) do
+      {:ok, document, []} ->
+        document
+
+      {:error, {:tokenizer_error, reason}} ->
+        raise TokenizerError, reason: reason
+    end
+  end
+
+  @spec parse(binary()) :: {:ok, tokens(), rest::tokens()} | {:error, parse_errors()}
+  def parse(blob) when is_binary(blob) do
+    case EDST.Tokenizer.tokenize(blob) do
       {:ok, tokens} ->
         parse_tokens(tokens, [])
 

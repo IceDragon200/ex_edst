@@ -1,5 +1,5 @@
 defmodule EDST.Path.EncoderTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias EDST.Path.Encoder
 
