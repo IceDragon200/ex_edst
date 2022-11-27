@@ -2,6 +2,8 @@ defmodule EDST.Path do
   @moduledoc """
   Path utilities for finding specific blocks or tags within a token list.
   """
+  import EDST.Tokens
+
   @type token :: EDST.Parser.token()
 
   @type tag_name :: String.t()
@@ -153,37 +155,37 @@ defmodule EDST.Path do
 
   defp node_matches(token, {name, key_matcher, value_matcher}) when is_atom(name) do
     case token do
-      {:header, _, _} ->
+      header() ->
         false
 
-      {:comment, _, _} ->
+      comment() ->
         false
 
-      {:line_item, _, _} ->
+      line_item() ->
         false
 
-      {:label, _, _} ->
+      label() ->
         false
 
-      {:tag, {key, value}, _} ->
+      tag(pair: {key, value}) ->
         matches?(key_matcher, key) and matches?(value_matcher, value)
 
-      {:dialogue, {speaker, body}, _} ->
+      dialogue(pair: {speaker, body}) ->
         matches?(key_matcher, speaker) and matches?(value_matcher, body)
 
-      {:quoted_string, _, _} ->
+      quoted_string() ->
         false
 
-      {:named_block, _, _} ->
+      named_block() ->
         :has_children
 
-      {:block, _, _} ->
+      block() ->
         :has_children
 
-      {:p, _, _} ->
+      p() ->
         false
 
-      {:word, _, _} ->
+      word() ->
         false
     end
   end

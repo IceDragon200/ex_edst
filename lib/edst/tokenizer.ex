@@ -1,4 +1,6 @@
 defmodule EDST.Tokenizer do
+  import EDST.Tokens
+
   @type token_meta :: %{
     col_no: non_neg_integer(),
     line_no: non_neg_integer(),
@@ -163,13 +165,13 @@ defmodule EDST.Tokenizer do
 
   defp tokenize_bin(<<"\r\n",rest::binary>>, acc, meta) do
     # raw newline
-    node = {:newline, nil, meta}
+    node = newline(meta: meta)
     tokenize_bin(rest, [node | acc], next_line(meta))
   end
 
   defp tokenize_bin(<<"\n",rest::binary>>, acc, meta) do
     # raw newline
-    node = {:newline, nil, meta}
+    node = newline(meta: meta)
     tokenize_bin(rest, [node | acc], next_line(meta))
   end
 
@@ -182,7 +184,7 @@ defmodule EDST.Tokenizer do
     # header tag
     case tokenize_word(rest) do
       {header, rest} ->
-        node = {:header, header, meta}
+        node = header(value: header, meta: meta)
         tokenize_bin(rest, [node | acc], move_column(meta, 1 + byte_size(header)))
     end
   end
@@ -192,10 +194,10 @@ defmodule EDST.Tokenizer do
     {node, rest, meta} =
       case String.split(rest, "\n", parts: 2) do
         [comment, rest] ->
-          {{:comment, comment, meta}, rest, next_line(meta)}
+          {comment(value: comment, meta: meta), rest, next_line(meta)}
 
         [] ->
-          {{:comment, rest, meta}, "", meta}
+          {comment(value: rest, meta: meta), "", meta}
       end
 
     tokenize_bin(rest, [node | acc], meta)
@@ -206,10 +208,10 @@ defmodule EDST.Tokenizer do
     {node, rest, meta} =
       case String.split(rest, "\n", parts: 2) do
         [name, rest] ->
-          {{:block_tag, name, meta}, rest, next_line(meta)}
+          {block_tag(value: name, meta: meta), rest, next_line(meta)}
 
         [] ->
-          {{:block_tag, rest, meta}, ""}
+          {block_tag(value: rest, meta: meta), ""}
       end
 
     tokenize_bin(rest, [node | acc], meta)
@@ -222,11 +224,13 @@ defmodule EDST.Tokenizer do
         case String.split(rest, "\n", parts: 2) do
           [value, rest] ->
             value = String.trim(value)
-            tokenize_bin(rest, [{:tag, {name, value}, meta} | acc], next_line(meta))
+            token = tag(pair: {name, value}, meta: meta)
+            tokenize_bin(rest, [token | acc], next_line(meta))
 
           [] ->
             value = String.trim(rest)
-            tokenize_bin("", [{:tag, {name, value}, meta} | acc], meta)
+            token = tag(pair: {name, value}, meta: meta)
+            tokenize_bin("", [token | acc], meta)
         end
     end
   end
@@ -237,7 +241,8 @@ defmodule EDST.Tokenizer do
       [should_be_blank, rest] ->
         case String.trim(should_be_blank) do
           "" ->
-            tokenize_bin(rest, [{:open_block, nil, meta} | acc], next_line(meta))
+            token = open_block(meta: meta)
+            tokenize_bin(rest, [token | acc], next_line(meta))
 
           _ ->
             {:error, {:opening_block_error, should_be_blank}}
@@ -251,14 +256,16 @@ defmodule EDST.Tokenizer do
       [should_be_blank, rest] ->
         case String.trim(should_be_blank) do
           "" ->
-            tokenize_bin(rest, [{:close_block, nil, meta} | acc], next_line(meta))
+            token = close_block(meta: meta)
+            tokenize_bin(rest, [token | acc], next_line(meta))
 
           _ ->
             {:error, {:close_block_error, should_be_blank}}
         end
 
       [_] ->
-        tokenize_bin("", [{:close_block, nil, meta} | acc], meta)
+        token = close_block(meta: meta)
+        tokenize_bin("", [token | acc], meta)
     end
   end
 
@@ -266,10 +273,12 @@ defmodule EDST.Tokenizer do
     # line item
     case String.split(rest, "\n", parts: 2) do
       [item, rest] ->
-        tokenize_bin(rest, [{:line_item, item, meta} | acc], next_line(meta))
+        token = line_item(value: item, meta: meta)
+        tokenize_bin(rest, [token | acc], next_line(meta))
 
       [item] ->
-        tokenize_bin("", [{:line_item, item, meta} | acc], meta)
+        token = line_item(value: item, meta: meta)
+        tokenize_bin("", [token | acc], meta)
     end
   end
 
@@ -278,7 +287,8 @@ defmodule EDST.Tokenizer do
     case String.split(rest, "--", parts: 2) do
       [label, rest] ->
         label = String.trim(label)
-        tokenize_bin(rest, [{:label, label, meta} | acc], meta)
+        token = label(value: label, meta: meta)
+        tokenize_bin(rest, [token | acc], meta)
 
       [_] ->
         {:error, {:incomplete_label, rest}}
@@ -292,7 +302,8 @@ defmodule EDST.Tokenizer do
         name = String.trim(raw_name)
         case tokenize_quoted_string(rest, move_column(meta, 2 + byte_size(raw_name))) do
           {body, rest, new_meta} ->
-            tokenize_bin(rest, [{:dialogue, {name, body}, meta} | acc], new_meta)
+            token = dialogue(pair: {name, body}, meta: meta)
+            tokenize_bin(rest, [token | acc], new_meta)
         end
     end
   end
@@ -301,14 +312,16 @@ defmodule EDST.Tokenizer do
     # just a raw quoted string
     case tokenize_quoted_string(rest, meta) do
       {string, rest, new_meta} ->
-        tokenize_bin(rest, [{:quoted_string, string, meta} | acc], new_meta)
+        token = quoted_string(value: string, meta: meta)
+        tokenize_bin(rest, [token | acc], new_meta)
     end
   end
 
   defp tokenize_bin(rest, acc, meta) do
     case tokenize_word(rest) do
       {word, rest} ->
-        tokenize_bin(rest, [{:word, word, meta} | acc], move_column(meta, byte_size(word)))
+        token = word(value: word, meta: meta)
+        tokenize_bin(rest, [token | acc], move_column(meta, byte_size(word)))
     end
   end
 

@@ -8,6 +8,8 @@ defmodule EDST.Parser do
   """
   alias EDST.TokenizerError
 
+  import EDST.Tokens
+
   @type token_meta :: EDST.Tokenizer.token_meta()
 
   @type header_token :: EDST.Tokenizer.header_token()
@@ -109,63 +111,65 @@ defmodule EDST.Parser do
     {:ok, Enum.reverse(acc), []}
   end
 
-  defp parse_tokens([{:block_tag, name, meta}, {:open_block, _, _meta} | tokens], acc) do
+  defp parse_tokens([block_tag(value: name, meta: meta), open_block() | tokens], acc) do
     case parse_tokens(tokens, []) do
-      {:ok, body, [{:close_block, _, _meta} | rest]} ->
-        parse_tokens(rest, [{:named_block, {name, body}, meta} | acc])
+      {:ok, body, [close_block() | rest]} ->
+        token = named_block(pair: {name, body}, meta: meta)
+        parse_tokens(rest, [token | acc])
     end
   end
 
-  defp parse_tokens([{:open_block, _, meta} | tokens], acc) do
+  defp parse_tokens([open_block(meta: meta) | tokens], acc) do
     case parse_tokens(tokens, []) do
-      {:ok, body, [{:close_block, _, _meta} | rest]} ->
-        parse_tokens(rest, [{:block, body, meta} | acc])
+      {:ok, body, [close_block() | rest]} ->
+        token = block(children: body, meta: meta)
+        parse_tokens(rest, [token | acc])
     end
   end
 
-  defp parse_tokens([{:close_block, _, _meta} | _tokens] = tokens, acc) do
+  defp parse_tokens([close_block() | _tokens] = tokens, acc) do
     {:ok, Enum.reverse(acc), tokens}
   end
 
-  defp parse_tokens([{:tag, {_key, _value}, _meta} = token | tokens], acc) do
+  defp parse_tokens([tag() = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_tokens([{:line_item, _item, _meta} = token | tokens], acc) do
+  defp parse_tokens([line_item() = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_tokens([{:comment, _comment, _meta} = token | tokens], acc) do
+  defp parse_tokens([comment() = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_tokens([{:word, _word, _meta} | _] = tokens, acc) do
+  defp parse_tokens([word() | _] = tokens, acc) do
     case parse_paragraph(tokens) do
       {token, tokens} ->
         parse_tokens(tokens, [token | acc])
     end
   end
 
-  defp parse_tokens([{:quoted_string, _body, _meta} | _] = tokens, acc) do
+  defp parse_tokens([quoted_string() | _] = tokens, acc) do
     case parse_paragraph(tokens) do
       {token, tokens} ->
         parse_tokens(tokens, [token | acc])
     end
   end
 
-  defp parse_tokens([{:newline, _, _meta} | tokens], acc) do
+  defp parse_tokens([newline() | tokens], acc) do
     parse_tokens(tokens, acc)
   end
 
-  defp parse_tokens([{:header, _header, _meta} = token | tokens], acc) do
+  defp parse_tokens([header() = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_tokens([{:label, _label, _meta} = token | tokens], acc) do
+  defp parse_tokens([label() = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
-  defp parse_tokens([{:dialogue, {_speaker, _body}, _meta} = token | tokens], acc) do
+  defp parse_tokens([dialogue() = token | tokens], acc) do
     parse_tokens(tokens, [token | acc])
   end
 
@@ -174,24 +178,24 @@ defmodule EDST.Parser do
 
     # use the first child's meta as the paragraphs meta
     [{_, _, meta} | _] = tokens
-    {{:p, tokens, meta}, rest}
+    {p(children: tokens, meta: meta), rest}
   end
 
   defp do_parse_paragraph([], acc) do
     {Enum.reverse(acc), []}
   end
 
-  defp do_parse_paragraph([{:quoted_string, _body, _} = token | tokens], acc) do
+  defp do_parse_paragraph([quoted_string() = token | tokens], acc) do
     do_parse_paragraph(tokens, [token | acc])
   end
 
-  defp do_parse_paragraph([{:word, _word, _} = token | tokens], acc) do
+  defp do_parse_paragraph([word() = token | tokens], acc) do
     do_parse_paragraph(tokens, [token | acc])
   end
 
-  defp do_parse_paragraph([{:newline, _, _} | tokens], acc) do
+  defp do_parse_paragraph([newline() | tokens], acc) do
     case tokens do
-      [{:newline, _, _} | rest] ->
+      [newline() | rest] ->
         {Enum.reverse(acc), rest}
 
       rest ->
