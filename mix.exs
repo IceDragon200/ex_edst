@@ -4,7 +4,7 @@ defmodule EDST.MixProject do
   def project do
     [
       app: :ex_edst,
-      version: "0.3.0",
+      version: "0.4.0",
       description: description(),
       elixir: "~> 1.12",
       elixirc_options: [

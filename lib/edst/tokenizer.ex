@@ -352,8 +352,12 @@ defmodule EDST.Tokenizer do
     tokenize_quoted_string(rest, next_line(meta), :body, ["\s" | acc])
   end
 
-  defp tokenize_quoted_string(<<c,rest::binary>>, meta, :body, acc) do
-    tokenize_quoted_string(rest, move_column(meta, 1), :body, [<<c>> | acc])
+  defp tokenize_quoted_string(<<"\\", c::utf8, rest::binary>>, meta, :body, acc) do
+    tokenize_quoted_string(rest, move_column(meta, 2), :body, [<<c::utf8>> | acc])
+  end
+
+  defp tokenize_quoted_string(<<c::utf8,rest::binary>>, meta, :body, acc) do
+    tokenize_quoted_string(rest, move_column(meta, 1), :body, [<<c::utf8>> | acc])
   end
 
   defp tokenize_word(str, acc \\ [])

@@ -48,6 +48,26 @@ defmodule EDSTTest do
       ] = tokens
     end
 
+    test "can handle quoted strings" do
+      assert {:ok, tokens, []} = EDST.parse("""
+      "Hello, World"
+      """)
+
+      assert [
+        {:p, [{:quoted_string, "Hello, World", _}], _},
+      ] = tokens
+    end
+
+    test "can handle quoted strings with nested quotes" do
+      assert {:ok, tokens, []} = EDST.parse("""
+      "And he said: \\"Bake me a cake\\""
+      """)
+
+      assert [
+        {:p, [{:quoted_string, "And he said: \"Bake me a cake\"", _}], _},
+      ] = tokens
+    end
+
     test "can parse a simple document" do
       assert {:ok, tokens, []} = EDST.parse("""
       # Comment
