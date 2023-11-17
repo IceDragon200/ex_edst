@@ -1,10 +1,7 @@
 defmodule EDST.Tokenizer do
   import EDST.Tokens
 
-  @type token_meta :: %{
-    col_no: non_neg_integer(),
-    line_no: non_neg_integer(),
-  }
+  @type token_meta :: EDST.Tokens.token_meta()
 
   @typedoc """
   The newline token represents a raw newline occuring between words
@@ -156,7 +153,7 @@ defmodule EDST.Tokenizer do
 
   @spec tokenize(binary()) :: {:ok, [token()]} | {:error, term}
   def tokenize(binary) when is_binary(binary) do
-    tokenize_bin(binary, [], %{line_no: 1, col_no: 1})
+    tokenize_bin(binary, [], token_meta())
   end
 
   defp tokenize_bin("", acc, _meta) do
@@ -366,6 +363,10 @@ defmodule EDST.Tokenizer do
     {Enum.reverse(acc) |> IO.iodata_to_binary(), ""}
   end
 
+  defp tokenize_word(<<"\t",_::binary>> = rest, acc) do
+    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest}
+  end
+
   defp tokenize_word(<<"\s",_::binary>> = rest, acc) do
     {Enum.reverse(acc) |> IO.iodata_to_binary(), rest}
   end
@@ -383,10 +384,10 @@ defmodule EDST.Tokenizer do
   end
 
   defp next_line(meta) do
-    %{meta | line_no: meta.line_no + 1, col_no: 1}
+    token_meta(meta, line_no: token_meta(meta, :line_no) + 1, col_no: 1)
   end
 
   defp move_column(meta, amount) do
-    %{meta | col_no: meta.col_no + amount}
+    token_meta(meta, col_no: token_meta(meta, :col_no) + amount)
   end
 end

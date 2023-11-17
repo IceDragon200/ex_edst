@@ -1,6 +1,8 @@
 defmodule EDST.Tokens do
   import Record
 
+  defrecord :token_meta, [line_no: 1, col_no: 1]
+
   defrecord :newline, [:unused, :meta]
 
   defrecord :header, [:value, :meta]
