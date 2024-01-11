@@ -1,5 +1,6 @@
 defmodule EDST.Tokenizer do
   import EDST.Tokens
+  import EDST.Utils
 
   @type token_meta :: EDST.Tokens.token_meta()
 
@@ -156,148 +157,117 @@ defmodule EDST.Tokenizer do
     tokenize_bin(binary, [], token_meta())
   end
 
-  defp tokenize_bin("", acc, _meta) do
+  defp tokenize_bin(<<>>, acc, _meta) do
     {:ok, Enum.reverse(acc)}
   end
 
-  defp tokenize_bin(<<"\r\n",rest::binary>>, acc, meta) do
+  defp tokenize_bin(
+    <<c1::utf8, c2::utf8, rest::binary>>,
+    acc,
+    meta
+  ) when is_utf8_twochar_newline(c1, c2) do
     # raw newline
     node = newline(meta: meta)
-    tokenize_bin(rest, [node | acc], next_line(meta))
+    tokenize_bin(rest, [node | acc], add_meta_line(meta))
   end
 
-  defp tokenize_bin(<<"\n",rest::binary>>, acc, meta) do
+  defp tokenize_bin(<<c::utf8, rest::binary>>, acc, meta) when is_utf8_newline_like_char(c) do
     # raw newline
     node = newline(meta: meta)
-    tokenize_bin(rest, [node | acc], next_line(meta))
+    tokenize_bin(rest, [node | acc], add_meta_line(meta))
   end
 
-  defp tokenize_bin(<<"\s",_::binary>> = rest, acc, meta) do
-    trimmed = String.trim_leading(rest, "\s")
-    tokenize_bin(trimmed, acc, move_column(meta, byte_size(rest) - byte_size(trimmed)))
+  defp tokenize_bin(<<c::utf8, _::binary>> = rest, acc, meta) when is_utf8_space_like_char(c) do
+    {spaces, rest} = split_spaces(rest)
+    tokenize_bin(rest, acc, add_meta_col(meta, byte_size(spaces)))
   end
 
-  defp tokenize_bin(<<"~",rest::binary>>, acc, meta) do
+  defp tokenize_bin(<<"~", rest::binary>>, acc, meta) do
     # header tag
     case tokenize_word(rest) do
       {header, rest} ->
         node = header(value: header, meta: meta)
-        tokenize_bin(rest, [node | acc], move_column(meta, 1 + byte_size(header)))
+        tokenize_bin(rest, [node | acc], add_meta_col(meta, 1 + byte_size(header)))
     end
   end
 
-  defp tokenize_bin(<<"#",rest::binary>>, acc, meta) do
+  defp tokenize_bin(<<"#", rest::binary>>, acc, meta) do
     # comment
-    {node, rest, meta} =
-      case String.split(rest, "\n", parts: 2) do
-        [comment, rest] ->
-          {comment(value: comment, meta: meta), rest, next_line(meta)}
-
-        [] ->
-          {comment(value: rest, meta: meta), "", meta}
-      end
-
-    tokenize_bin(rest, [node | acc], meta)
+    {:ok, comment, rest, nmeta} = split_up_to_newline(rest, meta)
+    tokenize_bin(rest, [comment(value: comment, meta: meta) | acc], nmeta)
   end
 
-  defp tokenize_bin(<<"%%",rest::binary>>, acc, meta) do
+  defp tokenize_bin(<<"%%", rest::binary>>, acc, meta) do
     # block tag
-    {node, rest, meta} =
-      case String.split(rest, "\n", parts: 2) do
-        [name, rest] ->
-          {block_tag(value: name, meta: meta), rest, next_line(meta)}
-
-        [] ->
-          {block_tag(value: rest, meta: meta), ""}
-      end
-
-    tokenize_bin(rest, [node | acc], meta)
+    {:ok, name, rest, nmeta} = split_up_to_newline(rest, meta)
+    tokenize_bin(rest, [block_tag(value: name, meta: meta) | acc], nmeta)
   end
 
   defp tokenize_bin(<<"%",rest::binary>>, acc, meta) do
     # tag
     case tokenize_word(rest) do
       {name, rest} ->
-        case String.split(rest, "\n", parts: 2) do
-          [value, rest] ->
-            value = String.trim(value)
-            token = tag(pair: {name, value}, meta: meta)
-            tokenize_bin(rest, [token | acc], next_line(meta))
+        {:ok, value, rest, nmeta} = split_up_to_newline(rest, meta)
 
-          [] ->
-            value = String.trim(rest)
-            token = tag(pair: {name, value}, meta: meta)
-            tokenize_bin("", [token | acc], meta)
-        end
+        value = String.trim(value)
+        token = tag(pair: {name, value}, meta: meta)
+        tokenize_bin(rest, [token | acc], nmeta)
     end
   end
 
   defp tokenize_bin(<<"{",rest::binary>>, acc, meta) do
     # open block
-    case String.split(rest, "\n", parts: 2) do
-      [should_be_blank, rest] ->
-        case String.trim(should_be_blank) do
-          "" ->
-            token = open_block(meta: meta)
-            tokenize_bin(rest, [token | acc], next_line(meta))
+    {:ok, should_be_blank, rest, nmeta} = split_up_to_newline(rest, meta)
+    case String.trim(should_be_blank) do
+      "" ->
+        token = open_block(meta: meta)
+        tokenize_bin(rest, [token | acc], nmeta)
 
-          _ ->
-            {:error, {:opening_block_error, should_be_blank}}
-        end
+      _ ->
+        {:error, {:opening_block_error, should_be_blank}}
     end
   end
 
   defp tokenize_bin(<<"}",rest::binary>>, acc, meta) do
     # close block
-    case String.split(rest, "\n", parts: 2) do
-      [should_be_blank, rest] ->
-        case String.trim(should_be_blank) do
-          "" ->
-            token = close_block(meta: meta)
-            tokenize_bin(rest, [token | acc], next_line(meta))
-
-          _ ->
-            {:error, {:close_block_error, should_be_blank}}
-        end
-
-      [_] ->
+    {:ok, should_be_blank, rest, nmeta} = split_up_to_newline(rest, meta)
+    case String.trim(should_be_blank) do
+      "" ->
         token = close_block(meta: meta)
-        tokenize_bin("", [token | acc], meta)
+        tokenize_bin(rest, [token | acc], nmeta)
+
+      _ ->
+        {:error, {:close_block_error, should_be_blank}}
     end
   end
 
-  defp tokenize_bin(<<"--- ",rest::binary>>, acc, meta) do
+  defp tokenize_bin(<<"---", s::utf8,rest::binary>>, acc, meta) when is_utf8_space_like_char(s) do
     # line item
-    case String.split(rest, "\n", parts: 2) do
-      [item, rest] ->
-        token = line_item(value: item, meta: meta)
-        tokenize_bin(rest, [token | acc], next_line(meta))
+    {:ok, item, rest, nmeta} = split_up_to_newline(rest, meta)
 
-      [item] ->
-        token = line_item(value: item, meta: meta)
-        tokenize_bin("", [token | acc], meta)
-    end
+    token = line_item(value: item, meta: meta)
+    tokenize_bin(rest, [token | acc], nmeta)
   end
 
-  defp tokenize_bin(<<"-- ", rest::binary>>, acc, meta) do
+  defp tokenize_bin(<<"--", s::utf8, rest::binary>>, acc, meta) when is_utf8_space_like_char(s) do
     # label at start
     case String.split(rest, "--", parts: 2) do
-      [label, rest] ->
-        label = String.trim(label)
+      [olabel, rest] ->
+        label = String.trim(olabel)
         token = label(value: label, meta: meta)
-        tokenize_bin(rest, [token | acc], meta)
+        tokenize_bin(rest, [token | acc], add_meta_col(meta, 4 + byte_size(olabel)))
 
       [_] ->
         {:error, {:incomplete_label, rest}}
     end
   end
 
-  defp tokenize_bin(<<"@ ",rest::binary>>, acc, meta) do
+  defp tokenize_bin(<<"@", s::utf8, rest::binary>>, acc, meta) when is_utf8_space_like_char(s) do
     # dialogue speaker
     case tokenize_speaker_name(rest, []) do
       {raw_name, <<"\"",_::binary>> = rest} ->
         name = String.trim(raw_name)
-        case tokenize_quoted_string(rest, move_column(meta, 2 + byte_size(raw_name))) do
+        case tokenize_quoted_string(rest, add_meta_col(meta, 2 + byte_size(raw_name))) do
           {body, rest, new_meta} ->
             token = dialogue(pair: {name, body}, meta: meta)
             tokenize_bin(rest, [token | acc], new_meta)
@@ -318,7 +288,7 @@ defmodule EDST.Tokenizer do
     case tokenize_word(rest) do
       {word, rest} ->
         token = word(value: word, meta: meta)
-        tokenize_bin(rest, [token | acc], move_column(meta, byte_size(word)))
+        tokenize_bin(rest, [token | acc], add_meta_col(meta, byte_size(word)))
     end
   end
 
@@ -334,60 +304,65 @@ defmodule EDST.Tokenizer do
   defp tokenize_quoted_string(str, meta, state \\ :start, acc \\ [])
 
   defp tokenize_quoted_string(<<"\"",rest::binary>>, meta, :start, acc) do
-    tokenize_quoted_string(rest, move_column(meta, 1), :body, acc)
+    tokenize_quoted_string(rest, add_meta_col(meta, 1), :body, acc)
   end
 
   defp tokenize_quoted_string(<<"\"",rest::binary>>, meta, :body, acc) do
-    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest, move_column(meta, 1)}
+    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest, add_meta_col(meta, 1)}
   end
 
-  defp tokenize_quoted_string(<<"\r\n",rest::binary>>, meta, :body, acc) do
-    tokenize_quoted_string(rest, next_line(meta), :body, ["\s" | acc])
+  defp tokenize_quoted_string(
+    <<c1::utf8, c2::utf8,rest::binary>>,
+    meta,
+    :body,
+    acc
+  ) when is_utf8_twochar_newline(c1, c2) do
+    tokenize_quoted_string(rest, add_meta_line(meta), :body, [<<c1::utf8, c2::utf8>> | acc])
   end
 
-  defp tokenize_quoted_string(<<"\n",rest::binary>>, meta, :body, acc) do
-    tokenize_quoted_string(rest, next_line(meta), :body, ["\s" | acc])
+  defp tokenize_quoted_string(
+    <<c::utf8, rest::binary>>,
+    meta,
+    :body,
+    acc
+  ) when is_utf8_newline_like_char(c) do
+    tokenize_quoted_string(rest, add_meta_line(meta), :body, [<<c::utf8>> | acc])
   end
 
   defp tokenize_quoted_string(<<"\\", c::utf8, rest::binary>>, meta, :body, acc) do
-    tokenize_quoted_string(rest, move_column(meta, 2), :body, [<<c::utf8>> | acc])
+    tokenize_quoted_string(rest, add_meta_col(meta, 2), :body, [<<c::utf8>> | acc])
   end
 
-  defp tokenize_quoted_string(<<c::utf8,rest::binary>>, meta, :body, acc) do
-    tokenize_quoted_string(rest, move_column(meta, 1), :body, [<<c::utf8>> | acc])
+  defp tokenize_quoted_string(
+    <<c::utf8, rest::binary>>,
+    meta,
+    :body,
+    acc
+  ) when is_utf8_scalar_char(c) do
+    tokenize_quoted_string(rest, add_meta_col(meta, 1), :body, [<<c::utf8>> | acc])
   end
 
   defp tokenize_word(str, acc \\ [])
 
-  defp tokenize_word("", acc) do
+  defp tokenize_word(<<>>, acc) do
     {Enum.reverse(acc) |> IO.iodata_to_binary(), ""}
   end
 
-  defp tokenize_word(<<"\t",_::binary>> = rest, acc) do
+  defp tokenize_word(
+    <<c1::utf8, c2::utf8, _::binary>> = rest,
+    acc
+  ) when is_utf8_twochar_newline(c1, c2) do
     {Enum.reverse(acc) |> IO.iodata_to_binary(), rest}
   end
 
-  defp tokenize_word(<<"\s",_::binary>> = rest, acc) do
+  defp tokenize_word(
+    <<c::utf8, _::binary>> = rest,
+    acc
+  ) when is_utf8_space_like_char(c) or is_utf8_newline_like_char(c) do
     {Enum.reverse(acc) |> IO.iodata_to_binary(), rest}
   end
 
-  defp tokenize_word(<<"\r\n",_::binary>> = rest, acc) do
-    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest}
-  end
-
-  defp tokenize_word(<<"\n",_::binary>> = rest, acc) do
-    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest}
-  end
-
-  defp tokenize_word(<<c,rest::binary>>, acc) do
-    tokenize_word(rest, [<<c>> | acc])
-  end
-
-  defp next_line(meta) do
-    token_meta(meta, line_no: token_meta(meta, :line_no) + 1, col_no: 1)
-  end
-
-  defp move_column(meta, amount) do
-    token_meta(meta, col_no: token_meta(meta, :col_no) + amount)
+  defp tokenize_word(<<c::utf8, rest::binary>>, acc) when is_utf8_scalar_char(c) do
+    tokenize_word(rest, [<<c::utf8>> | acc])
   end
 end

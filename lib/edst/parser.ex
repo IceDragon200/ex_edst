@@ -111,7 +111,12 @@ defmodule EDST.Parser do
     {:ok, Enum.reverse(acc), []}
   end
 
-  defp parse_tokens([block_tag(value: name, meta: meta), open_block() | tokens], acc) do
+  defp parse_tokens([
+    block_tag(value: name, meta: meta),
+    newline(),
+    open_block()
+    | tokens
+  ], acc) do
     case parse_tokens(tokens, []) do
       {:ok, body, [close_block() | rest]} ->
         token = named_block(pair: {name, body}, meta: meta)
