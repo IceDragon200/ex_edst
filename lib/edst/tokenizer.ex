@@ -154,56 +154,67 @@ defmodule EDST.Tokenizer do
 
   @spec tokenize(binary()) :: {:ok, [token()]} | {:error, term}
   def tokenize(binary) when is_binary(binary) do
-    tokenize_bin(binary, [], token_meta())
+    do_tokenize(binary, :default, [], token_meta())
   end
 
-  defp tokenize_bin(<<>>, acc, _meta) do
+  defp do_tokenize(<<>>, :default, acc, _meta) do
     {:ok, Enum.reverse(acc)}
   end
 
-  defp tokenize_bin(
+  defp do_tokenize(
     <<c1::utf8, c2::utf8, rest::binary>>,
+    :default,
     acc,
     meta
   ) when is_utf8_twochar_newline(c1, c2) do
     # raw newline
     node = newline(meta: meta)
-    tokenize_bin(rest, [node | acc], add_meta_line(meta))
+    do_tokenize(rest, :default, [node | acc], add_meta_line(meta))
   end
 
-  defp tokenize_bin(<<c::utf8, rest::binary>>, acc, meta) when is_utf8_newline_like_char(c) do
+  defp do_tokenize(
+    <<c::utf8, rest::binary>>,
+    :default,
+    acc,
+    meta
+  ) when is_utf8_newline_like_char(c) do
     # raw newline
     node = newline(meta: meta)
-    tokenize_bin(rest, [node | acc], add_meta_line(meta))
+    do_tokenize(rest, :default, [node | acc], add_meta_line(meta))
   end
 
-  defp tokenize_bin(<<c::utf8, _::binary>> = rest, acc, meta) when is_utf8_space_like_char(c) do
+  defp do_tokenize(
+    <<c::utf8, _::binary>> = rest,
+    :default,
+    acc,
+    meta
+  ) when is_utf8_space_like_char(c) do
     {spaces, rest} = split_spaces(rest)
-    tokenize_bin(rest, acc, add_meta_col(meta, byte_size(spaces)))
+    do_tokenize(rest, :default, acc, add_meta_col(meta, byte_size(spaces)))
   end
 
-  defp tokenize_bin(<<"~", rest::binary>>, acc, meta) do
+  defp do_tokenize(<<"~", rest::binary>>, :default, acc, meta) do
     # header tag
     case tokenize_word(rest) do
       {header, rest} ->
         node = header(value: header, meta: meta)
-        tokenize_bin(rest, [node | acc], add_meta_col(meta, 1 + byte_size(header)))
+        do_tokenize(rest, :default, [node | acc], add_meta_col(meta, 1 + byte_size(header)))
     end
   end
 
-  defp tokenize_bin(<<"#", rest::binary>>, acc, meta) do
+  defp do_tokenize(<<"#", rest::binary>>, :default, acc, meta) do
     # comment
     {:ok, comment, rest, nmeta} = split_up_to_newline(rest, meta)
-    tokenize_bin(rest, [comment(value: comment, meta: meta) | acc], nmeta)
+    do_tokenize(rest, :default, [comment(value: comment, meta: meta) | acc], nmeta)
   end
 
-  defp tokenize_bin(<<"%%", rest::binary>>, acc, meta) do
+  defp do_tokenize(<<"%%", rest::binary>>, :default, acc, meta) do
     # block tag
     {:ok, name, rest, nmeta} = split_up_to_newline(rest, meta)
-    tokenize_bin(rest, [block_tag(value: name, meta: meta) | acc], nmeta)
+    do_tokenize(rest, :default, [block_tag(value: name, meta: meta) | acc], nmeta)
   end
 
-  defp tokenize_bin(<<"%",rest::binary>>, acc, meta) do
+  defp do_tokenize(<<"%",rest::binary>>, :default, acc, meta) do
     # tag
     case tokenize_word(rest) do
       {name, rest} ->
@@ -211,58 +222,73 @@ defmodule EDST.Tokenizer do
 
         value = String.trim(value)
         token = tag(pair: {name, value}, meta: meta)
-        tokenize_bin(rest, [token | acc], nmeta)
+        do_tokenize(rest, :default, [token | acc], nmeta)
     end
   end
 
-  defp tokenize_bin(<<"{",rest::binary>>, acc, meta) do
+  defp do_tokenize(<<"{",rest::binary>>, :default, acc, meta) do
     # open block
     {:ok, should_be_blank, rest, nmeta} = split_up_to_newline(rest, meta)
     case String.trim(should_be_blank) do
       "" ->
         token = open_block(meta: meta)
-        tokenize_bin(rest, [token | acc], nmeta)
+        do_tokenize(rest, :default, [token | acc], nmeta)
 
       _ ->
         {:error, {:opening_block_error, should_be_blank}}
     end
   end
 
-  defp tokenize_bin(<<"}",rest::binary>>, acc, meta) do
+  defp do_tokenize(<<"}",rest::binary>>, :default, acc, meta) do
     # close block
     {:ok, should_be_blank, rest, nmeta} = split_up_to_newline(rest, meta)
     case String.trim(should_be_blank) do
       "" ->
         token = close_block(meta: meta)
-        tokenize_bin(rest, [token | acc], nmeta)
+        do_tokenize(rest, :default, [token | acc], nmeta)
 
       _ ->
         {:error, {:close_block_error, should_be_blank}}
     end
   end
 
-  defp tokenize_bin(<<"---", s::utf8,rest::binary>>, acc, meta) when is_utf8_space_like_char(s) do
+  defp do_tokenize(
+    <<"---", s::utf8,rest::binary>>,
+    :default,
+    acc,
+    meta
+  ) when is_utf8_space_like_char(s) do
     # line item
     {:ok, item, rest, nmeta} = split_up_to_newline(rest, meta)
 
     token = line_item(value: item, meta: meta)
-    tokenize_bin(rest, [token | acc], nmeta)
+    do_tokenize(rest, :default, [token | acc], nmeta)
   end
 
-  defp tokenize_bin(<<"--", s::utf8, rest::binary>>, acc, meta) when is_utf8_space_like_char(s) do
+  defp do_tokenize(
+    <<"--", s::utf8, rest::binary>>,
+    :default,
+    acc,
+    meta
+  ) when is_utf8_space_like_char(s) do
     # label at start
     case String.split(rest, "--", parts: 2) do
       [olabel, rest] ->
         label = String.trim(olabel)
         token = label(value: label, meta: meta)
-        tokenize_bin(rest, [token | acc], add_meta_col(meta, 4 + byte_size(olabel)))
+        do_tokenize(rest, :default, [token | acc], add_meta_col(meta, 4 + byte_size(olabel)))
 
       [_] ->
         {:error, {:incomplete_label, rest}}
     end
   end
 
-  defp tokenize_bin(<<"@", s::utf8, rest::binary>>, acc, meta) when is_utf8_space_like_char(s) do
+  defp do_tokenize(
+    <<"@", s::utf8, rest::binary>>,
+    :default,
+    acc,
+    meta
+  ) when is_utf8_space_like_char(s) do
     # dialogue speaker
     case tokenize_speaker_name(rest, []) do
       {raw_name, <<"\"",_::binary>> = rest} ->
@@ -270,25 +296,25 @@ defmodule EDST.Tokenizer do
         case tokenize_quoted_string(rest, add_meta_col(meta, 2 + byte_size(raw_name))) do
           {body, rest, new_meta} ->
             token = dialogue(pair: {name, body}, meta: meta)
-            tokenize_bin(rest, [token | acc], new_meta)
+            do_tokenize(rest, :default, [token | acc], new_meta)
         end
     end
   end
 
-  defp tokenize_bin(<<"\"",_rest::binary>> = rest, acc, meta) do
+  defp do_tokenize(<<"\"",_rest::binary>> = rest, :default, acc, meta) do
     # just a raw quoted string
     case tokenize_quoted_string(rest, meta) do
       {string, rest, new_meta} ->
         token = quoted_string(value: string, meta: meta)
-        tokenize_bin(rest, [token | acc], new_meta)
+        do_tokenize(rest, :default, [token | acc], new_meta)
     end
   end
 
-  defp tokenize_bin(rest, acc, meta) do
+  defp do_tokenize(rest, :default, acc, meta) do
     case tokenize_word(rest) do
       {word, rest} ->
         token = word(value: word, meta: meta)
-        tokenize_bin(rest, [token | acc], add_meta_col(meta, byte_size(word)))
+        do_tokenize(rest, :default, [token | acc], add_meta_col(meta, byte_size(word)))
     end
   end
 
@@ -297,8 +323,8 @@ defmodule EDST.Tokenizer do
     {name, rest}
   end
 
-  defp tokenize_speaker_name(<<c,rest::binary>>, acc) do
-    tokenize_speaker_name(rest, [<<c>> | acc])
+  defp tokenize_speaker_name(<<c::utf8, rest::binary>>, acc) when is_utf8_scalar_char(c) do
+    tokenize_speaker_name(rest, [<<c::utf8>> | acc])
   end
 
   defp tokenize_quoted_string(str, meta, state \\ :start, acc \\ [])
