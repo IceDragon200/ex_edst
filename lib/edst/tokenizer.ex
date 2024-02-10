@@ -290,23 +290,52 @@ defmodule EDST.Tokenizer do
     meta
   ) when is_utf8_space_like_char(s) do
     # dialogue speaker
-    case tokenize_speaker_name(rest, []) do
-      {raw_name, <<"\"",_::binary>> = rest} ->
+    case tokenize_speaker_name(rest, rest, 0) do
+      {raw_name, <<"\"\"\"", _::binary>> = rest} ->
         name = String.trim(raw_name)
-        case tokenize_quoted_string(rest, add_meta_col(meta, 2 + byte_size(raw_name))) do
-          {body, rest, new_meta} ->
+        case tokenize_heredoc_string(rest, add_meta_col(meta, 2 + byte_size(raw_name))) do
+          {:ok, body, rest, new_meta} ->
             token = dialogue(pair: {name, body}, meta: meta)
             do_tokenize(rest, :default, [token | acc], new_meta)
+
+          {:error, _} = err ->
+            err
+        end
+
+      {raw_name, <<"\"", _::binary>> = rest} ->
+        name = String.trim(raw_name)
+        case tokenize_quoted_string(rest, add_meta_col(meta, 2 + byte_size(raw_name))) do
+          {:ok, body, rest, new_meta} ->
+            token = dialogue(pair: {name, body}, meta: meta)
+            do_tokenize(rest, :default, [token | acc], new_meta)
+
+          {:error, _} = err ->
+            err
         end
     end
   end
 
-  defp do_tokenize(<<"\"",_rest::binary>> = rest, :default, acc, meta) do
-    # just a raw quoted string
-    case tokenize_quoted_string(rest, meta) do
-      {string, rest, new_meta} ->
+  defp do_tokenize(<<"\"\"\"",_rest::binary>> = rest, :default, acc, meta) do
+    # heredoc
+    case tokenize_heredoc_string(rest, meta) do
+      {:ok, string, rest, new_meta} ->
         token = quoted_string(value: string, meta: meta)
         do_tokenize(rest, :default, [token | acc], new_meta)
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp do_tokenize(<<"\"",_rest::binary>> = rest, :default, acc, meta) do
+    # double-quoted string
+    case tokenize_quoted_string(rest, meta) do
+      {:ok, string, rest, new_meta} ->
+        token = quoted_string(value: string, meta: meta)
+        do_tokenize(rest, :default, [token | acc], new_meta)
+
+      {:error, _} = err ->
+        err
     end
   end
 
@@ -318,13 +347,78 @@ defmodule EDST.Tokenizer do
     end
   end
 
-  defp tokenize_speaker_name(<<"\"",_rest::binary>> = rest, acc) do
-    name = Enum.reverse(acc) |> IO.iodata_to_binary()
+  defp tokenize_speaker_name(bin, <<"\"",_rest::binary>>, count) do
+    <<name::binary-size(count),rest::binary>> = bin
     {name, rest}
   end
 
-  defp tokenize_speaker_name(<<c::utf8, rest::binary>>, acc) when is_utf8_scalar_char(c) do
-    tokenize_speaker_name(rest, [<<c::utf8>> | acc])
+  defp tokenize_speaker_name(bin, <<c::utf8, rest::binary>>, count) do
+    tokenize_speaker_name(bin, rest, count + utf8_char_byte_size(c))
+  end
+
+  defp tokenize_heredoc_string(str, meta, state \\ :start, acc \\ [])
+
+  defp tokenize_heredoc_string(
+    <<"\"\"\"", c1::utf8, c2::utf8, rest::binary>>,
+    meta,
+    :start,
+    acc
+  ) when is_utf8_twochar_newline(c1, c2) do
+    tokenize_heredoc_string(rest, add_meta_line(meta, 1), :body, acc)
+  end
+
+  defp tokenize_heredoc_string(
+    <<"\"\"\"", c::utf8, rest::binary>>,
+    meta,
+    :start,
+    acc
+  ) when is_utf8_newline_like_char(c) do
+    tokenize_heredoc_string(rest, add_meta_line(meta, 1), :body, acc)
+  end
+
+  defp tokenize_heredoc_string(<<"\"\"\"",rest::binary>>, meta, :body, acc) do
+    case multiline_list_to_utf8_binary(Enum.reverse(acc)) do
+      {:ok, blob} ->
+        {:ok, blob, rest, add_meta_col(meta, 3)}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp tokenize_heredoc_string(
+    <<c1::utf8, c2::utf8,rest::binary>>,
+    meta,
+    :body,
+    acc
+  ) when is_utf8_twochar_newline(c1, c2) do
+    tokenize_heredoc_string(rest, add_meta_line(meta), :body, [c2, c1 | acc])
+  end
+
+  defp tokenize_heredoc_string(
+    <<c::utf8, rest::binary>>,
+    meta,
+    :body,
+    acc
+  ) when is_utf8_newline_like_char(c) do
+    tokenize_heredoc_string(rest, add_meta_line(meta), :body, [c | acc])
+  end
+
+  defp tokenize_heredoc_string(<<"\\\\", rest::binary>>, meta, :body, acc) do
+    tokenize_heredoc_string(rest, add_meta_col(meta, 2), :body, [{:esc, ?\\} | acc])
+  end
+
+  defp tokenize_heredoc_string(<<"\\\"", rest::binary>>, meta, :body, acc) do
+    tokenize_heredoc_string(rest, add_meta_col(meta, 2), :body, [{:esc, ?"} | acc])
+  end
+
+  defp tokenize_heredoc_string(
+    <<c::utf8, rest::binary>>,
+    meta,
+    :body,
+    acc
+  ) when is_utf8_scalar_char(c) do
+    tokenize_heredoc_string(rest, add_meta_col(meta, 1), :body, [c | acc])
   end
 
   defp tokenize_quoted_string(str, meta, state \\ :start, acc \\ [])
@@ -334,11 +428,12 @@ defmodule EDST.Tokenizer do
   end
 
   defp tokenize_quoted_string(<<"\"",rest::binary>>, meta, :body, acc) do
-    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest, add_meta_col(meta, 1)}
+    blob = Enum.reverse(acc) |> IO.iodata_to_binary()
+    {:ok, blob, rest, add_meta_col(meta, 1)}
   end
 
   defp tokenize_quoted_string(
-    <<c1::utf8, c2::utf8,rest::binary>>,
+    <<c1::utf8, c2::utf8, rest::binary>>,
     meta,
     :body,
     acc
@@ -355,8 +450,8 @@ defmodule EDST.Tokenizer do
     tokenize_quoted_string(rest, add_meta_line(meta), :body, [<<c::utf8>> | acc])
   end
 
-  defp tokenize_quoted_string(<<"\\", c::utf8, rest::binary>>, meta, :body, acc) do
-    tokenize_quoted_string(rest, add_meta_col(meta, 2), :body, [<<c::utf8>> | acc])
+  defp tokenize_quoted_string(<<"\\\"", rest::binary>>, meta, :body, acc) do
+    tokenize_quoted_string(rest, add_meta_col(meta, 2), :body, ["\"" | acc])
   end
 
   defp tokenize_quoted_string(
@@ -368,27 +463,36 @@ defmodule EDST.Tokenizer do
     tokenize_quoted_string(rest, add_meta_col(meta, 1), :body, [<<c::utf8>> | acc])
   end
 
-  defp tokenize_word(str, acc \\ [])
-
-  defp tokenize_word(<<>>, acc) do
-    {Enum.reverse(acc) |> IO.iodata_to_binary(), ""}
+  def tokenize_word(str) do
+    do_tokenize_word(str, str, 0)
   end
 
-  defp tokenize_word(
-    <<c1::utf8, c2::utf8, _::binary>> = rest,
-    acc
+  defp do_tokenize_word(bin, rest, count)
+
+  defp do_tokenize_word(bin, <<>>, count) when count > 0 do
+    <<word::binary-size(count), rest::binary>> = bin
+    {word, rest}
+  end
+
+  defp do_tokenize_word(
+    bin,
+    <<c1::utf8, c2::utf8, _::binary>>,
+    count
   ) when is_utf8_twochar_newline(c1, c2) do
-    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest}
+    <<word::binary-size(count), rest::binary>> = bin
+    {word, rest}
   end
 
-  defp tokenize_word(
-    <<c::utf8, _::binary>> = rest,
-    acc
+  defp do_tokenize_word(
+    bin,
+    <<c::utf8, _::binary>>,
+    count
   ) when is_utf8_space_like_char(c) or is_utf8_newline_like_char(c) do
-    {Enum.reverse(acc) |> IO.iodata_to_binary(), rest}
+    <<word::binary-size(count), rest::binary>> = bin
+    {word, rest}
   end
 
-  defp tokenize_word(<<c::utf8, rest::binary>>, acc) when is_utf8_scalar_char(c) do
-    tokenize_word(rest, [<<c::utf8>> | acc])
+  defp do_tokenize_word(bin, <<c::utf8, rest::binary>>, count) do
+    do_tokenize_word(bin, rest, count + utf8_char_byte_size(c))
   end
 end
