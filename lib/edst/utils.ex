@@ -169,7 +169,7 @@ defmodule EDST.Utils do
     meta,
     acc
   ) when is_utf8_twochar_newline(c1, c2) do
-    {:ok, IO.iodata_to_binary(Enum.reverse(acc)), rest, add_meta_line(meta)}
+    {:ok, IO.iodata_to_binary(Enum.reverse(acc)), rest, meta}
   end
 
   def split_up_to_newline(
@@ -177,7 +177,7 @@ defmodule EDST.Utils do
     meta,
     acc
   ) when is_utf8_newline_like_char(c) do
-    {:ok, IO.iodata_to_binary(Enum.reverse(acc)), rest, add_meta_line(meta)}
+    {:ok, IO.iodata_to_binary(Enum.reverse(acc)), rest, meta}
   end
 
   def split_up_to_newline(

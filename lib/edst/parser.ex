@@ -112,7 +112,7 @@ defmodule EDST.Parser do
   end
 
   defp parse_tokens([
-    block_tag(value: name, meta: meta),
+    block_tag(value: name, meta: meta) = open_tag,
     newline(),
     open_block()
     | tokens
@@ -121,6 +121,9 @@ defmodule EDST.Parser do
       {:ok, body, [close_block() | rest]} ->
         token = named_block(pair: {name, body}, meta: meta)
         parse_tokens(rest, [token | acc])
+
+      {:ok, _body, []} ->
+        {:error, {:unclosed_block, open_tag: open_tag}}
     end
   end
 

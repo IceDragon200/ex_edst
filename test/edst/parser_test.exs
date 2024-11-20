@@ -21,20 +21,20 @@ defmodule EDST.ParserTest do
           """)
 
       assert [
-        comment(),
-        comment(value: " Comment"),
-        comment(),
+        comment(meta: token_meta(line_no: 1)),
+        comment(value: " Comment", meta: token_meta(line_no: 2)),
+        comment(meta: token_meta(line_no: 3)),
         named_block(pair: {"head", [
-          tag(pair: {"title", "Test Document"}),
-        ]}),
+          tag(pair: {"title", "Test Document"}, meta: token_meta(line_no: 6)),
+        ]}, meta: token_meta(line_no: 4)),
         named_block(pair: {"body", [
           p(children: [
             word(value: "Contents"),
             word(value: "of"),
             word(value: "test"),
             word(value: "document"),
-          ]),
-        ]}),
+          ], meta: token_meta(line_no: 10)),
+        ]}, meta: token_meta(line_no: 8)),
       ] = tokens
     end
   end
